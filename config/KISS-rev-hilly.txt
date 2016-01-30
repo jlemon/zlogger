@@ -1,0 +1,9 @@
+ID KISS
+NAME Monday KISS Race
+START rev { Watopia Arch }
+FINISH rev { Watopia Arch }
+# 5 lap race, 28 miles
+# BEGIN date 2016-01-25 time 20:00 zone zulu
+BEGIN date 2016-01-25 time 12:00
+CUTOFF pace 28
+CAT all { delay 0 } km 44
