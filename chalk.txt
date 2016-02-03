@@ -1,20 +1,25 @@
 #
-# WORLD { coord } name
+# LINE WORLD { coord } name
+#  names are database lookup keys, and should be unique.
 #
 
 #
-# Watopia
+# Watopia Original
 #
 LINE W { c636b898 47cad291 c6390351 47ceb7df } Watopia Arch
-LINE W { 47a5581c 476a4772 47a18522 4768af7c } Underwater Tunnel Entrance
-LINE W { c71e0e61 c6c4aa56 c7249b98 c6cd2d48 } Green Sprint Banner
+LINE W { c71e0e61 c6c4aa56 c7249b98 c6cd2d48 } Watopia Green Sprint Banner
 LINE W { c5538156 47828890 c4be323e 4783f4ee } Alien Statues
-# LINE W { 47064f5d 47aa5e75 4707c8fb 47a68872 } Ocean Ave Blvd Sign
-# LINE W { c600624c 47cd6384 c604cd61 47c98590 } Second light pole
+LINE W { 47551acd 4745aa86 474e5934 4741be4a } KOM Banner
 
+#
+# Watopia Coastal Expansion
+#
+LINE W { 47a5581c 476a4772 47a18522 4768af7c } Underwater Tunnel Entrance
+LINE W { 47064f5d 47aa5e75 4707c8fb 47a68872 } Ocean Ave Blvd Sign
 
 #
 # Richmond
 #
-# LINE R { 462d8448 c616c3ea 46405da5 c5fbae07 } Richmond Arch
-# LINE R { c7c8bb99 47306bb2 c7c6f153 47375d51 } Cobble section start
+LINE R { 462d8448 c616c3ea 46405da5 c5fbae07 } Richmond Arch
+LINE R { c7c8bb99 47306bb2 c7c6f153 47375d51 } Cobble Section Start
+LINE R { c8681072 48108439 c8693927 480ef1c6 } Richmond Green Sprint Banner

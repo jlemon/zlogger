@@ -98,7 +98,7 @@ class rider():
         # No Database or self-classification, report by start group.
         #
         if (args.no_cat):
-            self.cat        = 'X'
+            self.cat = 'X'
 
 
     #
@@ -171,17 +171,13 @@ def get_riders(begin_ms, end_ms):
 #
 # Maps the chalkline name into a line_id.
 #
-def get_line(val):
-    m = re.match('{\s+(.*)\s+}', val)
-    if not m:
-        sys.exit('Could not parse %s' % val)
+def get_line(name):
     c = dbh.cursor()
-    c.execute('select line_id from chalkline where name = ?',
-            (m.group(1),))
+    c.execute('select line_id from chalkline where name = ?', (name,))
     data = c.fetchone()
     if not data:
-        sys.exit('Could not find line { %s }' % m.group(1))
-    return (m.group(1), data[0])
+        sys.exit('Could not find line { %s }' % name)
+    return data[0]
 
 
 def rider_info(r):
@@ -544,9 +540,24 @@ def filter_start(r, window):
             start = idx
     if start is None:
         return False
+
+    # there is a starting corral...
+    if conf.corral_line:
+        # look back in reverse from start 
+        for p in r.pos[start::-1]:
+            if (p.line_id != conf.corral_line_id):
+                continue
+
+            # must be in corral 12 sec before start.
+            t = msec_time(conf.start_ms - p.time_ms)
+            if (t < min2ms(0.2)):
+                r.set_dq(p.time_ms, 'Corral: -%2d:%02d' % (t.min, t.sec))
+                return True
+
     del(r.pos[0:start])
     if (args.debug):
         print 'START', r.id, r.pos[0]
+
     #
     # Look back 30 seconds from start time, show why this rider was DQ'd.
     #
@@ -770,6 +781,7 @@ class config():
         self.start_line         = None
         self.finish_forward     = None
         self.finish_line        = None
+        self.corral_line        = None
         self.pace_kmh           = None
         self.cutoff_ms          = None
         self.alternate          = None
@@ -803,13 +815,19 @@ class config():
     def kw_start(self, val):
         (dir, val) = val.split(None, 1)
         self.start_forward = True if dir == 'fwd' else False
-        (self.start_line_name, self.start_line_id) = get_line(val)
+        self.start_line = self.parse_line(val)
+
+    @keyword('CORRAL')
+    def kw_corral(self, val):
+        (dir, val) = val.split(None, 1)
+        self.corral_forward = True if dir == 'fwd' else False
+        self.corral_line = self.parse_line(val)
 
     @keyword('FINISH')
     def kw_finish(self, val):
         (dir, val) = val.split(None, 1)
         self.finish_forward = True if dir == 'fwd' else False
-        (self.finish_line_name, self.finish_line_id) = get_line(val)
+        self.finish_line = self.parse_line(val)
 
     @keyword('BEGIN')
     def kw_begin(self, val):
@@ -881,6 +899,18 @@ class config():
         else:
             self.finish_ms = self.start_ms + ((2 * 3600) * 1000)
 
+    def parse_line(self, val):
+        m = re.match('{\s+(.*)\s+}', val)
+        if not m:
+            sys.exit('Could not parse %s' % val)
+        return m.group(1)
+
+    def load_chalklines(self):
+        self.start_line_id = get_line(self.start_line)
+        self.finish_line_id = get_line(self.finish_line)
+        if self.corral_line:
+            self.corral_line_id = get_line(self.corral_line)
+
 
 global args
 global conf
@@ -906,6 +936,8 @@ def main(argv):
             help='Update rider database with their estimated ride category')
     parser.add_argument('-r', '--result_file', action='store_true',
             help='Write results into correctly named file')
+    parser.add_argument('--database', default='race_database.sql3',
+            help='Use alternate .sql3 sldatabase file as source')
     parser.add_argument('-n', '--no_cat', action='store_true',
             help='Do not perform automatic category assignemnts from names')
     parser.add_argument('config_file', help='Configuration file for race.')
@@ -915,14 +947,15 @@ def main(argv):
     # config needs to read the chalkline id's from the database.
     #  XXX fix this so alternate database may be specified.
     #
-    dbh = sqlite3.connect('race_database.sql3')
     conf = config(args.config_file)
+    dbh = sqlite3.connect(args.database)
+    conf.load_chalklines()
 
     if (args.debug):
         print "START", 'fwd' if conf.start_forward else 'rev', \
-                conf.start_line_id, conf.start_line_name
+                conf.start_line_id, conf.start_line
         print "FINISH", 'fwd' if conf.finish_forward else 'rev', \
-                conf.finish_line_id, conf.finish_line_name
+                conf.finish_line_id, conf.finish_line
 
 #    c = dbh.cursor()
 #    c.execute('select max(time_ms) from event where event = ?', ('STARTUP',));
