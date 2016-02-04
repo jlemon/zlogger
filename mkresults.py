@@ -22,6 +22,10 @@ class rider():
         self.dq_reason  = None
         self.distance   = None
 
+    # allow accessing self via r[key]
+    def __getitem__(self, k):
+        return getattr(self, k)
+
     def __str__(self):
         return '%6d %-35.35s records: %d' % (
                 self.id, self.name, len(self.pos))
@@ -35,7 +39,8 @@ class rider():
         self.weight     = v[3]
         self.height     = v[4]
         self.male       = True if v[5] else False
-        self.power      = [ '?', '*', ' ', ' ' ][v[6] or 0]
+        self._power     = v[6] or 0                     # 0 .. 3
+        self.power      = [ '?', '*', ' ', ' ' ][self._power]
         self.name       = (self.fname + ' ' + self.lname).encode('utf-8')
 
         cat = None
@@ -118,6 +123,96 @@ class rider():
             'weight': float(self.weight) / 1000, 
             'power': self.power,
             'male': True if self.male else False }
+
+
+    #
+    # Ride properties for external data views.
+    #
+    @property
+    def height_cm(self):
+        return self.height / 10
+
+    # weight is kept in grams.
+    @property
+    def weight_kg(self):
+        return float(self.weight) / 1000
+
+    @property
+    def sex(self):
+        return 'M' if self.male else 'F'
+
+    # XXX unknown...
+    @property
+    def age(self):
+        return 0
+
+    @property
+    def power_type(self):
+        return [None, 'zpower', 'smart', 'meter'][self._power]
+
+    # distance ridden.
+    @property
+    def km(self):
+        return float(self.meters) / 1000
+
+    # returns pace in km/hr.
+    @property
+    def pace(self):
+        if ride.msec:
+            return (float(self.meters) / float(self.msec)) * 3600
+        else:
+            return 0
+
+    @property
+    def date(self):
+        return conf.date
+
+    @property
+    def start_msec(self):
+        return stamp(self.pos[0].time_ms)
+
+    @property
+    def finish_msec(self):
+        return stamp(self.end.time_ms)
+
+    @property
+    def ride_msec(self):
+        return elapsed(self.msec)
+
+    @property
+    def start_hr(self):
+        return self.pos[0].hr
+
+    @property
+    def finish_hr(self):
+        return self.end.hr
+
+
+def summarize_ride(r):
+    s = r.pos[0]
+    e = r.end
+
+    # for DNF, use last position seen.
+    if r.dnf:
+        e = r.pos[-1]
+
+    r.mwh = e.mwh - s.mwh
+    r.meters = e.meters - s.meters
+    r.msec = e.time_ms - s.time_ms
+    r.watts = 0
+    if r.msec:
+        r.watts = (float(r.mwh) * 3600) / r.msec
+    r.wkg = 0
+    if r.weight:
+        wkg = (r.watts * 1000) / r.weight
+        r.wkg = float(int(wkg * 100)) / 100
+
+    if (r.wkg == 0):        r.ecat = 'X'
+    elif (not r.male):      r.ecat = 'W'
+    elif (r.wkg > 4):       r.ecat = 'A'
+    elif (r.wkg > 3.2):     r.ecat = 'B'
+    elif (r.wkg > 2.5):     r.ecat = 'C'
+    else:                   r.ecat = 'D'
 
 
 #
@@ -261,13 +356,12 @@ def show_nf(tag, finish):
     for r in finish:
         line = ("%-15.15s  %-35.35s  %5.1f" %
                 (r.dq_reason or '',
-                r.name,
-                float(r.distance) / 1000))
+                r.name, r.km))
         if (args.ident):
             line += "  ID %6d" % r.id
-            line += '  [ ' + stamp(r.pos[0].time_ms) + ' - '
+            line += '  [ ' + r.start_msec + ' - '
             if r.end:
-                line += stamp(r.end.time_ms) + ' ]'
+                line += r.finish_msec + ' ]'
             if (args.debug):
                 line += ' start m=' + str(r.pos[0].meters)
         print line
@@ -308,17 +402,17 @@ def show_results(F, tag):
         s = r.pos[0]
         e = r.end
 
-        (last_ms, mwh, meters, watts, wkg, ecat, timepos) = \
-                summarize_ride(r, last_ms)
+        timepos = make_timepos(last_ms, s.time_ms, e.time_ms)
+        last_ms = e.time_ms
 
         line = ("%2d. %s%c  %-*.*s  %5.1f  %3ld  %4.2f  %c  %3d  %3d %3d" % (
                 pos, 
                 timepos,
                 r.power,
                 N, N, r.name,
-                float(meters) / 1000,
-                watts, wkg, ecat, r.height / 10,
-                s.hr, e.hr))
+                r.km, 
+                r.watts, r.wkg, r.ecat, r.height_cm,
+                r.start_hr, r.finish_hr))
 
         if (args.split):
             l = s
@@ -338,8 +432,8 @@ def show_results(F, tag):
 
         if (args.ident):
             line += '  %6d' % r.id
-            line += ' [ ' + stamp(r.pos[0].time_ms) + ' - '
-            line += stamp(r.end.time_ms) + ' ]'
+            line += ' [ ' + r.start_msec + ' - '
+            line += r.finish_msec + ' ]'
 
         print line
 
@@ -412,30 +506,6 @@ def results(tag, F):
             show_nf('DNF, CAT ' + cat, finish)
 
 
-def summarize_ride(r, last_ms):
-    s = r.pos[0]
-    e = r.end
-
-    mwh = e.mwh - s.mwh
-    meters = e.meters - s.meters
-    watts = 0
-    if (e != s):
-        watts = (float(mwh) * 3600) / (e.time_ms - s.time_ms)
-    wkg = 0
-    if r.weight:
-        wkg = (watts * 1000) / r.weight
-
-    if (wkg == 0):      ecat = 'X'
-    elif (not r.male):  ecat = 'W'
-    elif (wkg > 4):     ecat = 'A'
-    elif (wkg > 3.2):   ecat = 'B'
-    elif (wkg > 2.5):   ecat = 'C'
-    else:               ecat = 'D'
-
-    timepos = make_timepos(last_ms, s.time_ms, e.time_ms)
-    return (e.time_ms, mwh, meters, watts, wkg, ecat, timepos)
-
-
 def json_cat(F, key):
     pos = 0
     last_ms = 0
@@ -445,8 +515,8 @@ def json_cat(F, key):
         s = r.pos[0]
         e = r.end
 
-        (last_ms, mwh, meters, watts, wkg, ecat, timepos) = \
-                summarize_ride(r, last_ms)
+        timepos = make_timepos(last_ms, s.time_ms, e.time_ms)
+        last_ms = e.time_ms
 
         finish = {
             'timepos': timepos, 'meters': meters,
@@ -511,14 +581,21 @@ def min2ms(x):
     return x * 60 * 1000 
 
 
+# timestamp msec -> H:M:S
 def hms(msec):
     t = time.localtime(msec / 1000)
     return time.strftime('%H:%M:%S', t)
 
 
+# timestamp msec -> H:M:S.frac
 def stamp(msec):
     return hms(msec) + ('.%03d' % (msec % 1000))
 
+
+# elapsed msec -> H:M:S.frac
+def elapsed(msec):
+    t = msec_time(msec)
+    return '%02d:%02d:%02d.%03d' % (t.hour, t.min, t.sec, t.msec)
 
 
 #
@@ -541,25 +618,30 @@ def filter_start(r, window):
     if start is None:
         return False
 
-    # there is a starting corral...
-    if conf.corral_line:
-        # look back in reverse from start 
+    s = r.pos[start]
+
+    # If there is a rider corral, and rider isn't a really late starter, 
+    # then perform further checks.  (late starters can just fly through...)
+    if conf.corral_line and \
+            (s.time_ms < (conf.start_ms + min2ms(0.5))):
+        # Find last crossing of corral line, from start.
         for p in r.pos[start::-1]:
             if (p.line_id != conf.corral_line_id):
                 continue
 
-            # must be in corral 12 sec before start.
+            # ... must have spent 15 sec in corral before start.
             t = msec_time(conf.start_ms - p.time_ms)
-            if (t < min2ms(0.2)):
-                r.set_dq(p.time_ms, 'Corral: -%2d:%02d' % (t.min, t.sec))
-                return True
+            if (t < min2ms(0.25)):
+                r.set_dq(p.time_ms, 'Corral:  %2d:%02d' % (t.min, t.sec))
+            break
 
     del(r.pos[0:start])
     if (args.debug):
         print 'START', r.id, r.pos[0]
 
     #
-    # Look back 30 seconds from start time, show why this rider was DQ'd.
+    # DQ any riders who started more than 30 seconds early.
+    #  This catches people from [start-2:00m .. start-30s]
     #
     if (r.pos[0].time_ms < (conf.start_ms - min2ms(0.5))):
         t = msec_time(conf.start_ms - r.pos[0].time_ms)
@@ -650,7 +732,8 @@ class grp_finish():
 
         d = (grp.start_ms - r.pos[0].time_ms) / 1000
 
-        # allow 5 second jump.
+        # XXX should be configurable...
+        # allow 8 second jump.
         if (d < 8):
             return
 
@@ -687,7 +770,7 @@ def select_finish(r):
     else:
         #
         # match any groups which have the cat letter in their name.
-        # if no match (group 'all', or cat 'W', select the best one.
+        # if no match (group 'all', or cat 'W'), select the best one.
         #
         F = [ f for f in r.finish if r.cat in f.grp.name ]
         finish = max(F, key = lambda f: f.weight(r)) if F else finish
@@ -698,34 +781,30 @@ def select_finish(r):
     if r.end is not None:
         r.end_time = r.end.time_ms
 
+    #
+    # only one of dnf, dq should be true.
+    #
+    r.dnf = True if r.end is None else False
+    if ((r.dq_time is not None) and (not r.dnf) and \
+            (r.dq_time < r.end.time_ms)):
+        r.dq = True
+    else:
+        r.dq = False
 
-#
-# XXX notused
-#
-def cat_details(r, cat):
-    s = r.pos[0]
-    for idx, p in enumerate(r.pos[1:]):
-        d = p.meters - s.meters
-        if (d < cat.distance):
-            continue
-        r.end_idx = idx + 1
-        r.end_time = p.time_ms
-        print r.id, d, "FINISHED", cat.name, time.ctime(p.time_ms/1000)
-        return True
+    # create the ride summary data for this finish.
+    summarize_ride(r)
+
 
 #
 # DNF = valid start, but distance < full distance.
 #  DQ = valid distance, but something went wrong.
 #
 def filter_dq(r):
-    if ((r.dq_time is not None) and \
-            ((r.end_time is not None) and (r.dq_time < r.end_time))):
-        return True
-    return False
+    return r.dq
 
 
 def filter_dnf(r):
-    return r.end is None
+    return r.dnf
 
 
 def strT_to_sec(val):
@@ -877,7 +956,7 @@ class config():
         self.grp.append(grp)
 
     def parse(self, fname):
-        f = open(fname, "r");
+        f = open(fname, "r")
         for line in f:
             line = line.strip()
             if not line or line.startswith('#'):
@@ -912,6 +991,41 @@ class config():
             self.corral_line_id = get_line(self.corral_line)
 
 
+def mysql(T, F):
+    import MySQLdb
+
+    msql = MySQLdb.connect(user = T['user'], db = T['db'])
+    c = msql.cursor()
+
+    c.execute('show tables like %s;', (T['table'],))
+    if not c.fetchone():
+        fld = []
+        for f in T['fields']:
+            fld.append("%s %s" % (f['name'], f['type']))
+        sql = 'create table %s (%s);' % (T['table'], ', '.join(fld))
+        c.execute(sql)
+        msql.commit()
+
+    fld = [ f['name'] for f in T['fields'] ]
+    sql = 'insert into %s (%s) values (%s);' % \
+            (T['table'], ', '.join(fld),
+             ', '.join([ "%s" for f in fld]))
+
+    fld = [ f['value'] for f in T['fields'] ]
+    dnf = set([ r for r in F if r.dnf ])
+    dq  = set([ r for r in F if r.dq ])
+    finish = set(F) - dnf - dq
+    finish = sorted(finish, key = lambda r: r.end_time)
+    place = 0
+    for r in finish:
+        place = place + 1
+        r.place = place
+        val = [ str(r[k]) for k in fld ]
+        c.execute(sql, val)
+    msql.commit()
+    msql.close()
+
+
 global args
 global conf
 global dbh
@@ -937,7 +1051,8 @@ def main(argv):
     parser.add_argument('-r', '--result_file', action='store_true',
             help='Write results into correctly named file')
     parser.add_argument('--database', default='race_database.sql3',
-            help='Use alternate .sql3 sldatabase file as source')
+            help='Specify source .sql3 database')
+    parser.add_argument('--output', help='Output format specification')
     parser.add_argument('-n', '--no_cat', action='store_true',
             help='Do not perform automatic category assignemnts from names')
     parser.add_argument('config_file', help='Configuration file for race.')
@@ -1027,6 +1142,8 @@ def main(argv):
 
     #
     # Now, select the matching finish record (or best weighted one)
+    #  this also creates the ride summary information for the finish,
+    #  but not the ride placement.
     #
     [ select_finish(r) for r in F ]
 
@@ -1035,6 +1152,21 @@ def main(argv):
         fname += '.json' if args.json else '.txt'
         print "Writing results to %s" % fname
         sys.stdout = open(fname, 'w')
+
+    if (args.output):
+        f = open(args.output, "r")
+        try:
+            out = json.load(f)
+        except ValueError, se:
+            sys.exit('"%s": %s' % (args.output, se))
+        f.close
+        if 'output' not in out or \
+                out['output'] not in globals():
+            sys.exit('Unknown output function.')
+        f = globals()[out['output']]
+        f(out, F)
+        print "Completed output for %s" % (args.output)
+        return
 
     if (args.json):
         dump_json(conf.id, conf.start_ms, F)
