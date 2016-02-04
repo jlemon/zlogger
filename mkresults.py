@@ -132,10 +132,12 @@ class rider():
     def height_cm(self):
         return self.height / 10
 
+    #
     # weight is kept in grams.
+    #   truncate to kilograms.
     @property
     def weight_kg(self):
-        return float(self.weight) / 1000
+        return int(self.weight / 1000)
 
     @property
     def sex(self):
@@ -199,13 +201,14 @@ def summarize_ride(r):
     r.mwh = e.mwh - s.mwh
     r.meters = e.meters - s.meters
     r.msec = e.time_ms - s.time_ms
-    r.watts = 0
+    watts = 0
     if r.msec:
-        r.watts = (float(r.mwh) * 3600) / r.msec
+        watts = (float(r.mwh) * 3600) / r.msec
     r.wkg = 0
     if r.weight:
-        wkg = (r.watts * 1000) / r.weight
+        wkg = (watts * 1000) / r.weight
         r.wkg = float(int(wkg * 100)) / 100
+    r.watts = int(watts)
 
     if (r.wkg == 0):        r.ecat = 'X'
     elif (not r.male):      r.ecat = 'W'
@@ -314,6 +317,22 @@ class msec_time():
         self.msec = msec / 100                              # to 1/10th sec
 
 
+#
+# A generator which takes a list of finishers, sorts by finish time,
+#   saves the placement and time position, then yields the result.
+#
+def place(F):
+    place = 0
+    last_ms = 0
+    finish = sorted(F, key = lambda r: r.end_time)
+    for r in finish:
+        place = place + 1
+        r.place = place
+        r.timepos = make_timepos(last_ms, r.pos[0].time_ms, r.end.time_ms)
+        last_ms = r.end.time_ms
+        yield r
+
+
 base_ms = 0
 def make_timepos(prev_ms, start_ms, finish_ms):
     global base_ms
@@ -395,19 +414,13 @@ def show_results(F, tag):
     print '\n' + h0 + '\n' + h1
 
     c = dbh.cursor()
-    pos = 0
-    last_ms = 0
-    for r in F:
-        pos = pos + 1
+    for r in place(F):
         s = r.pos[0]
         e = r.end
 
-        timepos = make_timepos(last_ms, s.time_ms, e.time_ms)
-        last_ms = e.time_ms
-
         line = ("%2d. %s%c  %-*.*s  %5.1f  %3ld  %4.2f  %c  %3d  %3d %3d" % (
-                pos, 
-                timepos,
+                r.place,
+                r.timepos,
                 r.power,
                 N, N, r.name,
                 r.km, 
@@ -464,8 +477,7 @@ def results(tag, F):
         dnf = set([ r for r in L if filter_dnf(r) ])
         dq = set([ r for r in L if filter_dq(r) ]).difference(dnf)
         finish = set(L).difference(dq).difference(dnf)
-        finish = sorted(finish, key = lambda r: r.end_time)
-        show_results(finish, 'CAT ' + cat)
+        show_results(list(finish), 'CAT ' + cat)
         done = set(done).union(finish)
 
     #
@@ -578,7 +590,7 @@ def dump_json(race_name, start_ms, F):
 
 
 def min2ms(x):
-    return x * 60 * 1000 
+    return int(x * 60 * 1000)
 
 
 # timestamp msec -> H:M:S
@@ -596,6 +608,15 @@ def stamp(msec):
 def elapsed(msec):
     t = msec_time(msec)
     return '%02d:%02d:%02d.%03d' % (t.hour, t.min, t.sec, t.msec)
+
+
+def avg_pace(start_pos, end_pos):
+    msec = float(end_pos.time_ms - start_pos.time_ms)
+    dist = float(end_pos.meters - start_pos.meters)
+    if msec:
+        return (dist / msec) * 3600
+    else:
+        return 0
 
 
 #
@@ -620,19 +641,21 @@ def filter_start(r, window):
 
     s = r.pos[start]
 
-    # If there is a rider corral, and rider isn't a really late starter, 
+    # If there is a rider corral, and rider isn't a late starter,
     # then perform further checks.  (late starters can just fly through...)
     if conf.corral_line and \
-            (s.time_ms < (conf.start_ms + min2ms(0.5))):
+            (s.time_ms < (conf.start_ms + (20 * MSEC_PER_SEC))):
         # Find last crossing of corral line, from start.
         for p in r.pos[start::-1]:
             if (p.line_id != conf.corral_line_id):
                 continue
 
-            # ... must have spent 15 sec in corral before start.
-            t = msec_time(conf.start_ms - p.time_ms)
-            if (t < min2ms(0.25)):
-                r.set_dq(p.time_ms, 'Corral:  %2d:%02d' % (t.min, t.sec))
+            #
+            # make sure average pace through the corral is low.
+            #
+            pace = avg_pace(p, s)
+            if (pace > 18):
+                r.set_dq(p.time_ms, 'Corral: %2d km/h' % (pace))
             break
 
     del(r.pos[0:start])
@@ -991,6 +1014,14 @@ class config():
             self.corral_line_id = get_line(self.corral_line)
 
 
+#
+# MySQL output function.
+#  Takes a template (in json format) describing the database
+#  and the unfiltered rider list.
+#  Creates the database if it does not exist.
+#
+#  XXX does not drop rows.... need to fix this.
+#
 def mysql(T, F):
     import MySQLdb
 
@@ -1015,11 +1046,7 @@ def mysql(T, F):
     dnf = set([ r for r in F if r.dnf ])
     dq  = set([ r for r in F if r.dq ])
     finish = set(F) - dnf - dq
-    finish = sorted(finish, key = lambda r: r.end_time)
-    place = 0
-    for r in finish:
-        place = place + 1
-        r.place = place
+    for r in place(finish):
         val = [ str(r[k]) for k in fld ]
         c.execute(sql, val)
     msql.commit()
@@ -1059,8 +1086,9 @@ def main(argv):
     args = parser.parse_args()
 
     #
-    # config needs to read the chalkline id's from the database.
-    #  XXX fix this so alternate database may be specified.
+    # config needs to read the chalkline id's from the database, but
+    #  the database name is configurable.  Delay loading chalklines
+    #  until the after the configuration is parsed.
     #
     conf = config(args.config_file)
     dbh = sqlite3.connect(args.database)

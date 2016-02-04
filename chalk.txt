@@ -23,3 +23,5 @@ LINE W { 47064f5d 47aa5e75 4707c8fb 47a68872 } Ocean Ave Blvd Sign
 LINE R { 462d8448 c616c3ea 46405da5 c5fbae07 } Richmond Arch
 LINE R { c7c8bb99 47306bb2 c7c6f153 47375d51 } Cobble Section Start
 LINE R { c8681072 48108439 c8693927 480ef1c6 } Richmond Green Sprint Banner
+LINE R { 46941ae1 c674322a 469d9744 c65b5d24 } 100m before Richmond Arch
+LINE R { 46815a3d c656e261 468b334d c63e9f57 } White Flag after 100m mark

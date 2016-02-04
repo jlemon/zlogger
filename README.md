@@ -14,7 +14,8 @@ of the correct world is not in place right now.  For the time being, comment/unc
 lines in the chalk.txt file, or create separate richmond/watopia chalk files.
 
 ### Running
-As root, run `./zlogger -c chalk.txt -i interface` in order to start the logger.
+As root, run `./zlogger -c chalk.txt -w WORLD -i interface` in order to start the logger.
+WORLD should start with 'r' or 'w', for Richmond or Watopia.
 The monitored interface will default to en1 if left off.
 
 Two files will be created:
