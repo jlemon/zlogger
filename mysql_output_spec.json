@@ -1,0 +1,98 @@
+{
+  "output": "mysql",
+  "user": "jlemon",
+  "db": "foo",
+  "table": "test",
+  "fields": [
+    {
+      "name": "Finishing_Position",
+      "type": "integer",
+      "value": "place"
+    },
+    {
+      "name": "RiderID",
+      "type": "integer",
+      "value": "id"
+    },
+    {
+      "name": "PowerSource",
+      "type": "set('zpower','smart','meter')",
+      "value": "power_type"
+    },
+    {
+      "name": "Rider_Start_Time",
+      "type": "time(3)",
+      "value": "start_msec"
+    },
+    {
+      "name": "Rider_Finish_Time",
+      "type": "time(3)",
+      "value": "finish_msec"
+    },
+    {
+      "name": "Rider_Race_Time",
+      "type": "time(3)",
+      "value": "ride_msec"
+    },
+    {
+      "name": "Rider_Name",
+      "type": "varchar(255)",
+      "value": "name"
+    },
+    {
+      "name": "Distance_KM",
+      "type": "float",
+      "value": "km"
+    },
+    {
+      "name": "AvgW",
+      "type": "integer",
+      "value": "watts"
+    },
+    {
+      "name": "W_KG",
+      "type": "integer",
+      "value": "wkg"
+    },
+    {
+      "name": "Category_Entered",
+      "type": "char(1)",
+      "value": "cat"
+    },
+    {
+      "name": "Height",
+      "type": "integer",
+      "value": "height_cm"
+    },
+    {
+      "name": "Weight",
+      "type": "float",
+      "value": "weight_kg"
+    },
+    {
+      "name": "Age",
+      "type": "integer",
+      "value": "age"
+    },
+    {
+      "name": "Sex",
+      "type": "char(1)",
+      "value": "sex"
+    },
+    {
+      "name": "Beginning_HR",
+      "type": "integer",
+      "value": "start_hr"
+    },
+    {
+      "name": "End_HR",
+      "type": "integer",
+      "value": "finish_hr"
+    },
+    {
+      "name": "Race_Date",
+      "type": "date",
+      "value": "date"
+    }
+  ]
+}
