@@ -189,6 +189,10 @@ class rider():
     def finish_hr(self):
         return self.end.hr
 
+    @property
+    def ride_uuid(self):
+        return conf.id + '.' + conf.date + '.' + str(self.id)
+
 
 def summarize_ride(r):
     s = r.pos[0]
@@ -1013,6 +1017,106 @@ class config():
         if self.corral_line:
             self.corral_line_id = get_line(self.corral_line)
 
+
+PREFIX='''
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="HandheldFriendly" content="True">
+  <meta name="MobileOptimized" content="320">
+
+  <title>Race Results</title>
+
+  <link rel="stylesheet" type="text/css"
+    href="http://oss.maxcdn.com/semantic-ui/2.1.8/semantic.min.css">
+</head>
+<body>
+'''
+
+TITLE='''
+<div class="ui fixed inverted menu">
+  <div class="ui container">
+    <a class="launch icon item">
+      <i class="content icon"></i>
+    </a>
+    <div class="item">
+      Label goes here
+    </div>
+    <div class="right menu">
+      <div class="vertically fitted borderless item">
+        test
+      </div>
+    </div>
+  </div>
+</div>
+'''
+
+TOPEN='''
+<div class="main ui container">
+<h2 class="ui dividing header">Results</h2>
+<table class="ui striped table">
+'''
+
+TCLOSE='''
+</table>
+</div>
+'''
+
+SUFFIX='''
+</body>
+</html>
+'''
+
+#
+# HTTP output function.
+#  Takes a template (in json format) describing the database,
+#  and the unfiltered rider list.
+#  Creates the database if it does not exist.
+#
+def http(T, F):
+
+    print PREFIX
+#    print TITLE
+    print '<div class="main ui container">'
+    print '<h2 class="ui dividing header">Results</h2>'
+    print '<h3 class="ui header">%s  %s: %s</h3>' % (conf.date, conf.id, conf.name)
+
+    hdr = [ f['name'] for f in T['fields'] ]
+    cls = [ d['class'] if 'class' in d else '' for d in T['fields'] ]
+    fld = [ f['value'] for f in T['fields'] ]
+
+    dnf = set([ r for r in F if r.dnf ])
+    dq  = set([ r for r in F if r.dq ])
+    finish = set(F) - dnf - dq
+
+    colors = { 'A': 'orange', 'B': 'teal', 'C': 'green', 'D': 'yellow',
+               'W': 'pink', 'X': 'black' }
+    C = sorted(list(set([ r.cat for r in finish ])))
+    for cat in C:
+        L = [ r for r in finish if r.cat == cat ]
+
+        print '<h4 class="ui horizontal divider header">'
+        print 'Cat %s' % cat
+        print '</h4>'
+        print '<table class="ui %s striped table">' % (colors[cat])
+        print '<thead><tr>'
+        for idx, f in enumerate(hdr):
+            print '<th%s>%s</th>' % (cls[idx], f)
+        print '</tr></thead><tbody>'
+
+        for r in place(L):
+            val = [ str(r[k]) for k in fld ]
+            for idx, f in enumerate(val):
+                esc = f.replace(' ', '&nbsp')
+                print '<td%s>%s</td>' % (cls[idx], esc)
+            print '</tr>'
+        print '</tbody>'
+        print '</table>'
+
+    print SUFFIX
 
 #
 # MySQL output function.

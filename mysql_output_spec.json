@@ -15,6 +15,11 @@
       "value": "id"
     },
     {
+      "name": "RideUUID",
+      "type": "varchar(255)",
+      "value": "ride_uuid"
+    },
+    {
       "name": "PowerSource",
       "type": "set('zpower','smart','meter')",
       "value": "power_type"
