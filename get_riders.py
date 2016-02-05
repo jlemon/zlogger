@@ -127,7 +127,7 @@ def get_rider_list():
     mkresults.conf = conf
     mkresults.args = namedtuple('Args', 'no_cat debug')(no_cat=False, debug=args.verbose)
 
-    startTime = conf.start_ms/1000
+    startTime = conf.start_ms / 1000
     retrievalTime = startTime + conf.start_window_ms / 1000
     sleepTime = retrievalTime - time.time()
     while sleepTime > 0:
