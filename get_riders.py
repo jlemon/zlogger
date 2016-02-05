@@ -264,10 +264,10 @@ def main(argv):
     startTime = conf.start_ms/1000
     retrievalTime = startTime + 600 #10 minute window hardcoded for now
     sleepTime = retrievalTime - time.time()
-    if sleepTime > 0:
-        if g_verbose:
-            print "Sleeping %s seconds" % sleepTime
+    while sleepTime > 0:
+	print "Sleeping %s seconds" % sleepTime
         time.sleep(sleepTime)
+        sleepTime = retrievalTime - time.time()
     conf.load_chalklines()
     R = mkresults.get_riders(conf.start_ms - mkresults.min2ms(2.0), conf.finish_ms)
     START_WINDOW = 10.0
