@@ -271,7 +271,7 @@ def get_riders(begin_ms, end_ms):
 #
 def get_line(name):
     c = dbh.cursor()
-    c.execute('select line_id from chalkline where name = ?', (name,))
+    c.execute('select line_id from chalkline where name like ?', (name+'%',))
     data = c.fetchone()
     if not data:
         sys.exit('Could not find line { %s }' % name)
