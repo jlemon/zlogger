@@ -56,7 +56,7 @@
     },
     {
       "name": "W_KG",
-      "type": "integer",
+      "type": "float",
       "value": "wkg"
     },
     {
