@@ -10,6 +10,8 @@ LINE W { c636b898 47cad291 c6390351 47ceb7df } Watopia Arch
 LINE W { c71e0e61 c6c4aa56 c7249b98 c6cd2d48 } Watopia Green Sprint Banner
 LINE W { c5538156 47828890 c4be323e 4783f4ee } Alien Statues
 LINE W { 47551acd 4745aa86 474e5934 4741be4a } KOM Banner
+LINE W { c68c14b4 47cb2e54 c6874c1b 47c77658 } Light Pole before Fwd Arch
+
 
 #
 # Watopia Coastal Expansion
