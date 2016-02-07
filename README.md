@@ -4,25 +4,40 @@ Zwift Data Logger and Results Generator
 ## Data Collection
 
 ### zlogger binary
-Obtain the zlogger binary (Mac OSX only for the time being) from Jonathan Lemon.
+Obtain the zlogger binary from Jonathan Lemon.
 This is needed to generate the data.
 
 ### Chalklines
 The chalk.txt file contains a collection of chalklines to monitor.
-The current code is arbitrarily limited to watching 4 chalklines, and auto-detection
-of the correct world is not in place right now.  For the time being, comment/uncomment
-lines in the chalk.txt file, or create separate richmond/watopia chalk files.
+The current code is arbitrarily limited to watching 8 chalklines, and 
+selects the correct set of chalklines for the world being monitored.
+
+Comment/uncomment lines in the chalk.txt file to taste.
 
 ### Running
-As root, run `./zlogger -c chalk.txt -w WORLD -i interface` in order to start the logger.
-WORLD should start with 'r' or 'w', for Richmond or Watopia.
-The monitored interface will default to en1 if left off.
+As run `zlogger -c chalk.txt -w WORLD` in order to start the logger.
+`WORLD` should start with 'r' or 'w', for Richmond or Watopia.
 
-Two files will be created:
-  `debug.log` will contain debugging information.
-  `race_database.sql3` contains position information.
+The monitored interface will default to the first interface if omitted.
+Alternate interfaces may be selected with `-i interface`
+
+Two files will be created:  
+
+ * `debug.log` will contain debugging information.
+ * `race_database.sql3` contains position information.
 
 Note that the database schema is subject to change without notice.
+
+
+#### Mac version
+Run zlogger as `root`.  The first interface will likely default to en0.
+
+#### Windows version
+win10pcap is required -- obtain and install from the web.
+The pcap drivers are compatible with windows 7 and windows 10.
+
+On windows, interface names are specified via their UUIDs, which look like "{...}".
+A list of valid interface names is printed in the debug.log fiile on startup.
 
 
 ## Report Generation
