@@ -15,6 +15,7 @@ class rider():
         self.id         = id
         self.pos        = []
         self.set_info(('Rider', str(id), None, 0, 0, None, None))
+        self.has_info   = False
 
         self.finish     = []
         self.end_time   = None
@@ -42,6 +43,7 @@ class rider():
         self._power     = v[6] or 0                     # 0 .. 3
         self.power      = [ '?', '*', ' ', ' ' ][self._power]
         self.name       = (self.fname + ' ' + self.lname).encode('utf-8')
+        self.has_info   = True
 
         cat = None
         #
@@ -155,13 +157,14 @@ class rider():
     # distance ridden.
     @property
     def km(self):
-        return float(self.meters) / 1000
+        return float(self.meters / 100) / 10
 
     # returns pace in km/hr.
     @property
     def pace(self):
-        if ride.msec:
-            return (float(self.meters) / float(self.msec)) * 3600
+        if self.msec:
+            v = (float(self.meters) / float(self.msec)) * 3600
+            return float(int(v * 100)) / 100
         else:
             return 0
 
@@ -623,6 +626,12 @@ def avg_pace(start_pos, end_pos):
         return 0
 
 
+def filter_tag(r, tag):
+    if not r.has_info:
+        return True
+    return re.search(tag, r.name, re.IGNORECASE) is not None
+
+
 #
 # Return only those riders which fall within the start window.
 #   Trim the position record to the correct start.
@@ -757,17 +766,12 @@ class grp_finish():
         if (r.pos[0].time_ms > grp.start_ms):
             return
 
-        d = (grp.start_ms - r.pos[0].time_ms) / 1000
-
-        # XXX should be configurable...
-        # allow 8 second jump.
-        if (d < 8):
-            return
-
-        # compute penalty if needed?
-        t = msec_time(d * 1000)
-        self.dq_time = grp.start_ms
-        self.dq_reason = 'Early:  %2d:%02d' % (t.min, t.sec)
+        #
+        # If jumped before grace period, set DQ (or apply penalty?)
+        #
+        if (r.pos[0].time_ms < (grp.start_ms + conf.grace_ms)):
+            t = msec_time(conf.start_ms - r.pos[0].time_ms)
+            r.set_dq(grp.start_ms, 'Early: -%2d:%02d' % (t.min, t.sec))
 
 
     #
@@ -890,7 +894,9 @@ class config():
         self.corral_line        = None
         self.pace_kmh           = None
         self.cutoff_ms          = None
+        self.grace_ms           = 0
         self.alternate          = None
+        self.required_tag       = None
         self.grp                = []        # category groups
 
         self.init_kw(config.__dict__)
@@ -917,6 +923,13 @@ class config():
     def kw_alternate(self, val):
         self.alternate = True
 
+    @keyword('GRACE')
+    def kw_grace(self, val):
+        i = iter(val.split())
+        d = dict(zip(i, i))
+        if 'sec' in d:
+            self.grace_ms = strT_to_sec(d['time']) * 60 * 1000
+
     @keyword('START')
     def kw_start(self, val):
         (dir, val) = val.split(None, 1)
@@ -928,6 +941,10 @@ class config():
         (dir, val) = val.split(None, 1)
         self.corral_forward = True if dir == 'fwd' else False
         self.corral_line = self.parse_line(val)
+
+    @keyword('REQUIRED_TAG')
+    def kw_required_id(self, val):
+        self.required_tag = val
 
     @keyword('FINISH')
     def kw_finish(self, val):
@@ -1097,6 +1114,7 @@ def http(T, F):
     C = sorted(list(set([ r.cat for r in finish ])))
     for cat in C:
         L = [ r for r in finish if r.cat == cat ]
+#        cat = cat if cat in 'ABCDW' else 'X'
 
         print '<h4 class="ui horizontal divider header">'
         print 'Cat %s' % cat
@@ -1244,6 +1262,12 @@ def main(argv):
         L = [ r.id for r in F ]
         print '\n'.join(map(str, L))
         return
+
+    #
+    # Filter out names without required tag.
+    #
+    if conf.required_tag is not None:
+        F = [r for r in F if filter_tag(r, conf.required_tag) ]
 
     #
     # Trim position records.
