@@ -2,8 +2,6 @@
 import sys, getopt, getpass
 import requests
 import json
-import lxml.html
-import re
 import sqlite3
 import os, time, stat
 import mkresults
@@ -12,115 +10,29 @@ from collections import namedtuple
 g_verbose = False
 g_verifyCert = True
 
-def get_logon_form(session):
-    # Get Initial Form Logon Code
-    # GET https://secure.zwift.com/auth/realms/zwift/tokens/login
-    try:
-        response = session.get(
-            url="https://secure.zwift.com/auth/realms/zwift/tokens/login",
-            params={
-                "client_id": "Zwift Scheme",
-                "redirect_uri": "zwift://localhost/",
-                "login": "true",
-            },
-            headers={
-                "Accept-Encoding": "gzip, deflate",
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Connection": "keep-alive",
-                "Host": "secure.zwift.com",
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 9_0_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13A452",
-                "Accept-Language": "en-us",
-            },
-            verify = g_verifyCert,
-        )
-        
-        if g_verbose:
-            print('Response HTTP Status Code: {status_code}'.format(
-                status_code=response.status_code))
-            print('Response HTTP Response Body: {content}'.format(
-                content=response.content))
-
-        # locate form action
-        doc = lxml.html.fromstring(response.content)
-        form = doc.forms[0]
-        if g_verbose:
-            print('Form Action: {keys}'.format(keys=form.action))
-
-        # extract logon "code" from form action
-        p = re.compile(ur'code=(.*)$')
-        match = re.search(p, form.action)
-        code = match.group(1)
-        
-        return code
-    except requests.exceptions.RequestException, e:
-        print('HTTP Request failed: %s', e)
-
-def post_credentials(session, code, username, password):
-    # Credentials POST
-    # POST https://secure.zwift.com/auth/realms/zwift/login-actions/request/login
-    try:
-        response = session.post(
-            url="https://secure.zwift.com/auth/realms/zwift/login-actions/request/login",
-            params={
-                "code": code,
-            },
-            headers={
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Origin": "https://secure.zwift.com",
-                "Connection": "keep-alive",
-                "Referer": "https://secure.zwift.com/auth/realms/zwift/tokens/login?client_id=Zwift+Scheme&redirect_uri=zwift%3A%2F%2Flocalhost%2F&login=true",
-                "Content-Type": "application/x-www-form-urlencoded",
-                "Host": "secure.zwift.com",
-                "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 9_0_2 like Mac OS X) AppleWebKit/601.1.46 (KHTML, like Gecko) Mobile/13A452",
-                "Accept-Encoding": "gzip, deflate",
-                "Accept-Language": "en-us",
-            },
-            data={
-                "login": "Log in",
-                "username": username,
-                "password": password,
-            },
-            allow_redirects = False,
-            verify = g_verifyCert,
-        )
-
-        if g_verbose:
-            print('Response HTTP Status Code: {status_code}'.format(
-                status_code=response.status_code))
-            print('Response HTTP Response Body: {content}'.format(
-                content=response.content))
-            print('Response HTTP Response Location Header: {location}'.format(
-                location=response.headers["Location"]))
-
-        # extract logon "code" from Location header
-        p = re.compile(ur'code=(.*)$')
-        match = re.search(p, response.headers["Location"])
-        code = match.group(1)
-
-        return code
-    except requests.exceptions.RequestException, e:
-        print('HTTP Request failed: %s' % e)
-
-def query_tokens(session, code):
-    # Query Access and Refresh Tokens
+def post_credentials(session, username, password):
+    # Credentials POSTing and tokens retrieval
     # POST https://secure.zwift.com/auth/realms/zwift/tokens/access/codes
+
     try:
         response = session.post(
             url="https://secure.zwift.com/auth/realms/zwift/tokens/access/codes",
             headers={
+                "Accept": "*/*",
                 "Accept-Encoding": "gzip, deflate",
-                "Accept": "application/json",
                 "Connection": "keep-alive",
                 "Content-Type": "application/x-www-form-urlencoded",
                 "Host": "secure.zwift.com",
-                "Content-Length": "108",
-                "User-Agent": "Zwift/115 CFNetwork/758.0.2 Darwin/15.0.0",
-                "Accept-Language": "en-us",
+                "User-Agent": "Zwift/1.5 (iPhone; iOS 9.0.2; Scale/2.00)",
+                "Accept-Language": "en-US;q=1",
             },
             data={
-                "client_id": "Zwift Scheme",
-                "code": code,
+                "client_id": "Zwift_Mobile_Link",
+                "username": username,
+                "password": password,
+                "grant_type": "password",
             },
+            allow_redirects = False,
             verify = g_verifyCert,
         )
 
@@ -135,7 +47,7 @@ def query_tokens(session, code):
         return (json_dict["access_token"], json_dict["refresh_token"], json_dict["expires_in"])
 
     except requests.exceptions.RequestException, e:
-        print('HTTP Request failed: %s', e)
+        print('HTTP Request failed: %s' % e)
 
 def query_player_profile(session, access_token, player_id):
     # Query Player Profile
@@ -169,16 +81,7 @@ def query_player_profile(session, access_token, player_id):
         print('HTTP Request failed: %s' % e)
 
 def login(session, user, password):
-    # Get Logon Form
-    code = get_logon_form(session)
-    if code is None or len(code) == 0:
-        sys.stderr.write("Unable to retrieve code from logon form.\n")
-        sys.exit(1)
-
-    code = post_credentials(session, code, user, password)
-
-    # Query tokens
-    access_token, refresh_token, expired_in = query_tokens(session, code)
+    access_token, refresh_token, expired_in = post_credentials(session, user, password)
     return access_token
 
 def updateRider(session, access_token, user):
@@ -253,7 +156,7 @@ def main(argv):
     # Post Credentials
     password = getpass.getpass("Password for %s? " % user)
     #test the credentials - token will expire, so we'll log in again after sleeping
-    login(requests.session(), user, password)
+    access_token = login(requests.session(), user, password)
 
     for opt,val in opts:
         if opt == '--verbose':
