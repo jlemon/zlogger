@@ -646,15 +646,9 @@ def filter_tag(r, tag):
 #   Trim the position record to the correct start.
 #
 # rider may have crossed start line, then gone back and restarted.
-#    (happened in KISS race).
-# Also, for Richmond crits, lap time = 7 mins, so a 10 min start
-# window will pick up riders coming around for the 2nd lap.
-#
-# Find the last valid line crossing before the start time, or
-# the first one afterwards.
-#
-# Large start windows may be needed for delayed groups.
-#  (consider moving start window to start group?)
+# yes - happened in KISS race.
+#  find the _last_ correct line crossing in the start window.
+#   (may be larger for longer, delaeyed neutrals.
 #
 def filter_start(r):
     start = None
@@ -664,8 +658,6 @@ def filter_start(r):
         if (p.line_id == conf.start_line_id) and \
                 (p.forward == conf.start_forward):
             start = idx
-            if (p.time_ms > conf.start_ms):
-                break
     if start is None:
         return False
 
