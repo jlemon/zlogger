@@ -472,9 +472,10 @@ def results(tag, F):
     print '=' * 10,
     print '%s   %s: %s' % (conf.date, conf.id, conf.name)
     print '=' * 10,
-    print '    start: %s - %s   cutoff: %s  %s' % (hms(conf.start_ms),
-            hms(conf.start_ms + conf.start_window_ms), hms(conf.finish_ms),
-            tzoff)
+    print '     start: %s - %s   grace: %s min' % (hms(conf.start_ms),
+            hms(conf.start_ms + conf.start_window_ms), min_sec(conf.grace_ms))
+    print '=' * 10,
+    print '    cutoff: %s  %s' % (hms(conf.finish_ms), tzoff)
     print '=' * 80
 
     #
@@ -608,6 +609,12 @@ def hms(msec):
     return time.strftime('%H:%M:%S', t)
 
 
+# timestamp msec -> M:S
+def min_sec(msec):
+    t = time.localtime(msec / 1000)
+    return time.strftime('%M:%S', t)
+
+
 # timestamp msec -> H:M:S.frac
 def stamp(msec):
     return hms(msec) + ('.%03d' % (msec % 1000))
@@ -677,13 +684,6 @@ def filter_start(r):
     if (args.debug):
         print 'START', r.id, r.pos[0]
 
-    #
-    # DQ any riders who started more than 30 seconds early.
-    #  This catches people from [start-2:00m .. start-30s]
-    #
-#    if (r.pos[0].time_ms < (conf.start_ms - min2ms(0.5))):
-#        t = msec_time(conf.start_ms - r.pos[0].time_ms)
-#        r.set_dq(r.pos[0].time_ms, 'Early: -%2d:%02d' % (t.min, t.sec))
     return True
 
 
@@ -772,7 +772,7 @@ class grp_finish():
         #
         # If jumped before grace period, set DQ (or apply penalty?)
         #
-        if (r.pos[0].time_ms < (grp.start_ms + conf.grace_ms)):
+        if (r.pos[0].time_ms < (grp.start_ms - conf.grace_ms)):
             t = msec_time(conf.start_ms - r.pos[0].time_ms)
             r.set_dq(grp.start_ms, 'Early: -%2d:%02d' % (t.min, t.sec))
 
