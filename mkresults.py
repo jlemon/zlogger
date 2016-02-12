@@ -472,7 +472,9 @@ def results(tag, F):
     print '=' * 10,
     print '%s   %s: %s' % (conf.date, conf.id, conf.name)
     print '=' * 10,
-    print '    start: %s   cutoff: %s  %s' % (hms(conf.start_ms), hms(conf.finish_ms), tzoff)
+    print '    start: %s - %s   cutoff: %s  %s' % (hms(conf.start_ms),
+            hms(conf.start_ms + conf.start_window_ms), hms(conf.finish_ms),
+            tzoff)
     print '=' * 80
 
     #
@@ -641,10 +643,10 @@ def filter_tag(r, tag):
 #  find the _last_ correct line crossing in the start window.
 #   (may be larger for longer, delaeyed neutrals.
 #
-def filter_start(r, window):
+def filter_start(r):
     start = None
     for idx, p in enumerate(r.pos):
-        if (p.time_ms > (conf.start_ms + min2ms(window))):
+        if (p.time_ms > (conf.start_ms + conf.start_window_ms)):
             break
         if (p.line_id == conf.start_line_id) and \
                 (p.forward == conf.start_forward):
@@ -679,9 +681,9 @@ def filter_start(r, window):
     # DQ any riders who started more than 30 seconds early.
     #  This catches people from [start-2:00m .. start-30s]
     #
-    if (r.pos[0].time_ms < (conf.start_ms - min2ms(0.5))):
-        t = msec_time(conf.start_ms - r.pos[0].time_ms)
-        r.set_dq(r.pos[0].time_ms, 'Early: -%2d:%02d' % (t.min, t.sec))
+#    if (r.pos[0].time_ms < (conf.start_ms - min2ms(0.5))):
+#        t = msec_time(conf.start_ms - r.pos[0].time_ms)
+#        r.set_dq(r.pos[0].time_ms, 'Early: -%2d:%02d' % (t.min, t.sec))
     return True
 
 
@@ -755,7 +757,8 @@ class grp_finish():
 
         s = r.pos[0]
         for idx, p in enumerate(r.pos[1:]):
-            if (p.meters - s.meters) >= grp.distance:
+            if ((p.meters - s.meters) >= grp.distance) and \
+                    (p.line_id == conf.finish_line_id):
                 self.pos = p
                 break
 
@@ -897,6 +900,7 @@ class config():
         self.grace_ms           = 0
         self.alternate          = None
         self.required_tag       = None
+        self.start_window_ms    = min2ms(10.0)
         self.grp                = []        # category groups
 
         self.init_kw(config.__dict__)
@@ -927,8 +931,8 @@ class config():
     def kw_grace(self, val):
         i = iter(val.split())
         d = dict(zip(i, i))
-        if 'sec' in d:
-            self.grace_ms = strT_to_sec(d['time']) * 60 * 1000
+        if 'min' in d:
+            self.grace_ms = strT_to_sec(d['min']) * 1000
 
     @keyword('START')
     def kw_start(self, val):
@@ -945,6 +949,15 @@ class config():
     @keyword('REQUIRED_TAG')
     def kw_required_id(self, val):
         self.required_tag = val
+
+    @keyword('WINDOW')
+    def kw_window(self, val):
+        i = iter(val.split())
+        d = dict(zip(i, i))
+        if 'time' in d:
+            self.start_window_ms = strT_to_sec(d['time']) * 60 * 1000
+        if 'min' in d:
+            self.start_window_ms = strT_to_sec(d['min']) * 1000
 
     @keyword('FINISH')
     def kw_finish(self, val):
@@ -1109,7 +1122,7 @@ def http(T, F):
     dq  = set([ r for r in F if r.dq ])
     finish = set(F) - dnf - dq
 
-    colors = { 'A': 'orange', 'B': 'teal', 'C': 'green', 'D': 'yellow',
+    colors = { 'A': 'red', 'B': 'yellow', 'C': 'green', 'D': 'violet',
                'W': 'pink', 'X': 'black' }
     C = sorted(list(set([ r.cat for r in finish ])))
     for cat in C:
@@ -1213,7 +1226,7 @@ def main(argv):
     #  until the after the configuration is parsed.
     #
     conf = config(args.config_file)
-    dbh = sqlite3.connect(args.database)
+    dbh = sqlite3.connect('file:%s?mode=ro' % args.database)
     conf.load_chalklines()
 
     if (args.debug):
@@ -1233,21 +1246,20 @@ def main(argv):
         print('time: [%d .. %d]' % (conf.start_ms, conf.finish_ms))
 
     #
-    # Look back 2 minutes just to get riders who cross over the start line
-    # really early.
+    # Look back at least 2 minutes just to get riders who cross
+    # over the start line really early.
     #
-    R = get_riders(conf.start_ms - min2ms(2.0), conf.finish_ms)
+    grace_ms = max(min2ms(2.0), conf.grace_ms)
+    R = get_riders(conf.start_ms - grace_ms, conf.finish_ms)
     if (args.debug):
         print 'Selected %d riders' % len(R)
-
-    START_WINDOW = 10.0         # from offical race start time.
 
     #
     # Cut rider list down to only those who crossed the start line
     # in the correct direction from the time the race started.
     #
     F = R.values()
-    F = [ r for r in F if filter_start(r, START_WINDOW) ]
+    F = [ r for r in F if filter_start(r) ]
 
     # pull names from the database.
     [ rider_info(r) for r in F ]
