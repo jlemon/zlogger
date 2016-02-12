@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import sys, getopt, getpass
+import sys, argparse, getpass
 import requests
 import json
 import sqlite3
@@ -7,8 +7,8 @@ import os, time, stat
 import mkresults
 from collections import namedtuple
 
-g_verbose = False
-g_verifyCert = True
+global args
+global dbh
 
 def post_credentials(session, username, password):
     # Credentials POSTing and tokens retrieval
@@ -33,10 +33,10 @@ def post_credentials(session, username, password):
                 "grant_type": "password",
             },
             allow_redirects = False,
-            verify = g_verifyCert,
+            verify = args.verifyCert,
         )
 
-        if g_verbose:
+        if args.verbose:
             print('Response HTTP Status Code: {status_code}'.format(
                 status_code=response.status_code))
             print('Response HTTP Response Body: {content}'.format(
@@ -64,10 +64,10 @@ def query_player_profile(session, access_token, player_id):
                 "Authorization": "Bearer %s" % access_token,
                 "Accept-Language": "en-us",
             },
-            verify = g_verifyCert,
+            verify = args.verifyCert,
         )
 
-        if g_verbose:
+        if args.verbose:
             print('Response HTTP Status Code: {status_code}'.format(
                 status_code=response.status_code))
             print('Response HTTP Response Body: {content}'.format(
@@ -87,7 +87,7 @@ def login(session, user, password):
 def updateRider(session, access_token, user):
     # Query Player Profile
     json_dict = query_player_profile(session, access_token, user)
-    if g_verbose:
+    if args.verbose:
         print ("\n")
         print (json_dict)
     male = 1 if json_dict["male"] else 0
@@ -98,7 +98,6 @@ def updateRider(session, access_token, user):
         power = 2
     else:
         power = 3
-#     zpower = 1 if (json_dict["powerSourceModel"] == "Power Meter") else 0
     fname = json_dict["firstName"].strip()
     lname = json_dict["lastName"].strip()
     print ("id=%s wt=%s m=%s [%s] <%s %s>\n" %
@@ -107,81 +106,88 @@ def updateRider(session, access_token, user):
     c = dbh.cursor()
     try:
         c.execute("insert into rider " +
-            "(rider_id, fname, lname, weight, height, male, zpower," +
+            "(rider_id, fname, lname, age, weight, height, male, zpower," +
             " fetched_at) " +
-            "values (?,?,?,?,?,?,?,date('now'))",
-             (json_dict["id"], fname, lname,
+            "values (?,?,?,?,?,?,?,?,date('now'))",
+             (json_dict["id"], fname, lname, json_dict["age"],
              json_dict["weight"], json_dict["height"], male, power))
     except sqlite3.IntegrityError:
         c.execute("update rider " +
-            "set fname = ?, lname = ?, weight = ?, height = ?, male = ?," +
-            " zpower = ?, fetched_at = date('now') where rider_id = ?",
-             (fname, lname,
+            "set fname = ?, lname = ?, age = ?, weight = ?, height = ?," +
+            " male = ?, zpower = ?, fetched_at = date('now')" +
+            " where rider_id = ?",
+             (fname, lname, json_dict["age"],
              json_dict["weight"], json_dict["height"], male, power,
              json_dict["id"]))
 
-def usage(exename, s):
-    print >>s, "Usage: %s [--verbose] [--dont-check-certificates] zwift_username conf_file" % exename
+
+def get_rider_list():
+    mkresults.dbh = sqlite3.connect('race_database.sql3')
+    conf = mkresults.config(args.config)
+    mkresults.conf = conf
+    mkresults.args = namedtuple('Args', 'no_cat debug')(no_cat=False, debug=args.verbose)
+
+    startTime = conf.start_ms/1000
+    retrievalTime = startTime + conf.start_window_ms / 1000
+    sleepTime = retrievalTime - time.time()
+    while sleepTime > 0:
+        print "Sleeping %s seconds" % sleepTime
+        time.sleep(sleepTime)
+        sleepTime = retrievalTime - time.time()
+    conf.load_chalklines()
+    R = mkresults.get_riders(conf.start_ms - mkresults.min2ms(2.0), conf.finish_ms)
+    return [ r.id for r in R.values() if mkresults.filter_start(r) ]
 
 def main(argv):
-    global g_verbose
-    global g_verifyCert
-    global conf
+    global args
     global dbh
 
     access_token = None
     cookies = None
 
-    try:
-        opts,args=getopt.getopt(argv[1:], "", ['verbose', 'dont-check-certificates'])
-    except getopt.GetoptError, e:
-        sys.stderr.write("Unknown option: %s\n" % e.opt)
-        usage(argv[0], sys.stderr)
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description = 'Zwift Name Fetcher')
+    parser.add_argument('-v', '--verbose', action='store_true',
+            help='Verbose output')
+    parser.add_argument('--dont-check-certificates', action='store_false',
+            dest='verifyCert', default=True)
+    parser.add_argument('-c', '--config', help='Use config file')
+    parser.add_argument('-u', '--user', help='Zwift user name')
+    parser.add_argument('idlist', metavar='rider_id', type=int, nargs='*',
+            help='rider ids to fetch')
+    args = parser.parse_args()
 
-    if len(args) != 2:
-        usage(argv[0], sys.stderr)
-        sys.exit(1)
+    if args.user:
+        password = getpass.getpass("Password for %s? " % args.user)
+    else:
+        file = os.environ['HOME'] + '/.zwift_cred.json'
+        with open(file) as f:
+            try:
+                cred = json.load(f)
+            except ValueError, se:
+                sys.exit('"%s": %s' % (args.output, se))
+        f.close
+        args.user = cred['user']
+        password = cred['pass']
 
-    dbh = sqlite3.connect('race_database.sql3')
-    mkresults.dbh = dbh
-    conf = mkresults.config(args[1])
-    mkresults.conf = conf
-    mkresults.args = namedtuple('Args', 'no_cat debug')(no_cat=False, debug=g_verbose)
-    user = args[0]
+    # test the credentials - token will expire, so we'll log in again after sleeping
+    access_token = login(requests.session(), args.user, password)
 
-    g_verbose = False
-    g_verifyCert = True
+    if args.config:
+        L = get_rider_list()
+    elif args.idlist:
+        L = args.idlist
+    else:
+        L = [ int(line) for line in sys.stdin ]
 
-    # Post Credentials
-    password = getpass.getpass("Password for %s? " % user)
-    #test the credentials - token will expire, so we'll log in again after sleeping
-    access_token = login(requests.session(), user, password)
+    if args.verbose:
+        print 'Selected %d riders' % len(L)
 
-    for opt,val in opts:
-        if opt == '--verbose':
-            g_verbose = True
-        elif opt == '--dont-check-certificates':
-            g_verifyCert = False
-
-    startTime = conf.start_ms/1000
-    retrievalTime = startTime + 600 #10 minute window hardcoded for now
-    sleepTime = retrievalTime - time.time()
-    while sleepTime > 0:
-	print "Sleeping %s seconds" % sleepTime
-        time.sleep(sleepTime)
-        sleepTime = retrievalTime - time.time()
-    conf.load_chalklines()
-    R = mkresults.get_riders(conf.start_ms - mkresults.min2ms(2.0), conf.finish_ms)
-    START_WINDOW = 10.0
-    F = [ r for r in R.values() if mkresults.filter_start(r, START_WINDOW) ]
-    if g_verbose:
-        print 'Selected %d riders' % len(R)
     session = requests.session()
-    access_token = login(session, user, password)
+    access_token = login(session, args.user, password)
 
-    for u in F:
-        updateRider(session, access_token, u.id)
+    dbh = sqlite3.connect('rider_names.sql3')
+    for id in L:
+        updateRider(session, access_token, id)
     dbh.commit()
     dbh.close()
 
