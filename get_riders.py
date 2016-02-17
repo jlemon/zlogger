@@ -80,9 +80,38 @@ def query_player_profile(session, access_token, player_id):
     except requests.exceptions.RequestException, e:
         print('HTTP Request failed: %s' % e)
 
+def logout(session, refresh_token):
+    # Logout
+    # POST https://secure.zwift.com/auth/realms/zwift/tokens/logout
+    try:
+        response = session.post(
+            url="https://secure.zwift.com/auth/realms/zwift/tokens/logout",
+            headers={
+                "Accept": "*/*",
+                "Accept-Encoding": "gzip, deflate",
+                "Connection": "keep-alive",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Host": "secure.zwift.com",
+                "User-Agent": "Zwift/1.5 (iPhone; iOS 9.0.2; Scale/2.00)",
+                "Accept-Language": "en-US;q=1",
+            },
+            data={
+                "client_id": "Zwift_Mobile_Link",
+                "refresh_token": refresh_token,
+            },
+            verify = args.verifyCert,
+        )
+        if args.verbose:
+            print('Response HTTP Status Code: {status_code}'.format(
+                status_code=response.status_code))
+            print('Response HTTP Response Body: {content}'.format(
+                content=response.content))
+    except requests.exceptions.RequestException, e:
+        print('HTTP Request failed: %s' % e)
+
 def login(session, user, password):
     access_token, refresh_token, expired_in = post_credentials(session, user, password)
-    return access_token
+    return access_token, refresh_token
 
 def updateRider(session, access_token, user):
     # Query Player Profile
@@ -172,8 +201,11 @@ def main(argv):
         args.user = cred['user']
         password = cred['pass']
 
+    session = requests.session()
+
     # test the credentials - token will expire, so we'll log in again after sleeping
-    access_token = login(requests.session(), args.user, password)
+    access_token, refresh_token = login(session, args.user, password)
+    logout(session, refresh_token)
 
     if args.config:
         L = get_rider_list()
@@ -185,8 +217,7 @@ def main(argv):
     if args.verbose:
         print 'Selected %d riders' % len(L)
 
-    session = requests.session()
-    access_token = login(session, args.user, password)
+    access_token, refresh_token = login(session, args.user, password)
 
     dbh = sqlite3.connect('rider_names.sql3')
     for id in L:
@@ -194,6 +225,7 @@ def main(argv):
     dbh.commit()
     dbh.close()
 
+    logout(session, refresh_token)
 
 if __name__ == '__main__':
     try:
