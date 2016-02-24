@@ -20,6 +20,9 @@ class rider():
         self.dq_reason  = None
         self.distance   = None
 
+        self.points     = 0
+        self.end        = None
+
     # allow accessing self via r[key]
     def __getitem__(self, k):
         return getattr(self, k)
@@ -96,9 +99,10 @@ class rider():
         #
         if cat is not None:
             cat = cat if cat in 'ABCDW' else None
-        if (cat is not None) and (cat != 'X'):
+        if ((self.cat is None) or (self.cat == 'X')) and \
+                ((cat is not None) and (cat != 'X')):
             self.cat = cat
-        
+
         #
         # No Database or self-classification, report by start group.
         #
@@ -252,6 +256,7 @@ class pos():
 #
 def get_riders(begin_ms, end_ms):
     R = {}
+    all_pos = []
     c = dbh.cursor()
     for data in c.execute('select rider_id, time_ms, line_id, forward,' +
             ' meters, mwh, duration, elevation, speed, hr from pos' +
@@ -260,10 +265,12 @@ def get_riders(begin_ms, end_ms):
         id = data[0]
         if not id in R:
             R[id] = rider(id)
-        R[id].pos.append(pos(data[1:]))
+        position = pos(data[1:])
+        R[id].pos.append(position)
         if (args.debug):
             print id, R[id].pos[-1]
-    return R
+        all_pos.append((position, R[id]))
+    return R, all_pos
 
 
 #
@@ -521,7 +528,7 @@ def results(tag, F):
             show_nf('DNF, CAT ' + cat, finish)
 
 
-def json_cat(F, key):
+def json_cat(F, key, sprints=None):
     cat_finish = []
     for r in place(F):
         s = r.pos[0]
@@ -533,7 +540,7 @@ def json_cat(F, key):
             'start_msec': s.time_ms, 'end_msec': e.time_ms,
             'watts': r.watts, 'est_cat': r.ecat, 'pos': r.place,
             'wkg': r.wkg,
-            'beg_hr': s.hr, 'end_hr': e.hr }
+            'beg_hr': s.hr, 'end_hr': e.hr, 'points': r.points }
         entry = { 'rider': r.data(), 'finish': finish }
         cat_finish.append(entry)
 
@@ -546,12 +553,21 @@ def json_cat(F, key):
             cross.append(p.data())
         entry['cross'] = cross
 
+    sprint_data = []
+    if sprints:
+        for i, s in enumerate(sprints):
+            sprint = {'name': 'sprint %s' % (i + 1),
+                    'results': [ { 'points': e[0], 'rider_id': e[1].id,
+                    'fname': e[1].fname, 'lname': e[1].lname }
+                    for e in s ] }
+            sprint_data.append(sprint)
+
     # distance, start_time
 
-    return { 'name': key, 'results': cat_finish }
+    return { 'name': key, 'results': cat_finish, 'sprints': sprint_data }
 
 
-def dump_json(race_name, start_ms, F):
+def dump_json(race_name, start_ms, F, sprints):
     result = []
     C = sorted(list(set([ r.cat for r in F ])))
     dq = set([ r for r in F if filter_dq(r) ])
@@ -562,6 +578,11 @@ def dump_json(race_name, start_ms, F):
         finish = set(L).difference(dq).difference(dnf)
         finish = sorted(finish, key = lambda r: r.end_time)
         result.append(json_cat(finish, cat))
+        if sprints:
+            cat_sprints = sprints.get(cat, None)
+        else:
+            cat_sprints = None
+        result.append(json_cat(finish, cat, cat_sprints))
         if len(dq):
             finish = sorted(dq, key = lambda r: r.distance)
             finish = [ r for r in finish if r.distance > 0 ]
@@ -815,6 +836,66 @@ def select_finish(r):
     # create the ride summary data for this finish.
     summarize_ride(r)
 
+#
+# Calculate points for each rider by iterating through all the points
+# definitions
+# note: only call after select_finish has been called on all riders
+#
+def calculate_points(all_pos, points, points_final):
+    points_defs = {}
+    cur_defs = {}
+    next_defs = {}
+    sprints = {}
+    sprint_positions = {}
+    end_positions = {}
+    current_sprints = {}
+    end_sprints = {}
+    for cat in ('A', 'B', 'C', 'D', 'W'):
+        points_defs[cat] = iter(sorted(points, key=lambda p: p.distance))
+        cur_defs[cat] = next(points_defs[cat], None)
+        next_defs[cat] = next(points_defs[cat], None)
+        sprints[cat] = []
+    for p in all_pos:
+        (position, r) = p
+        if r.cat not in ('A', 'B', 'C', 'D', 'W'):
+            continue
+        distance = position.meters - r.pos[0].meters
+        if distance >= cur_defs[r.cat].distance:
+            while next_defs[r.cat] and distance >= next_defs[r.cat].distance:
+                cur_defs[r.cat] = next_defs[r.cat]
+                next_defs[r.cat] = next(points_defs[r.cat], None)
+                sprint_positions[r.cat] = 0
+                if current_sprints.get(r.cat, None):
+                    sprints[r.cat].append(current_sprints[r.cat])
+                current_sprints[r.cat] = []
+            if r.end and (position.meters < r.end.meters) and \
+                    (position.line_id == cur_defs[r.cat].line_id):
+                place = sprint_positions.get(r.cat, 0) + 1
+                sprint_positions[r.cat] = place
+                if place <= len(cur_defs[r.cat].points):
+                    points = cur_defs[r.cat].points[place - 1]
+                    r.points += points
+                    if r.cat in current_sprints:
+                        current_sprints[r.cat].append((points, r))
+                    else:
+                        current_sprints[r.cat] = [(points, r)]
+            if r.end and position.meters == r.end.meters:
+                place = end_positions.get(r.cat, 0) + 1
+                end_positions[r.cat] = place
+                if place <= len(points_final):
+                    points = points_final[place - 1]
+                    r.points += points
+                    if r.cat in end_sprints:
+                        end_sprints[r.cat].append((points, r))
+                    else:
+                        end_sprints[r.cat] = [(points, r)]
+    for cat in ('A', 'B', 'C', 'D', 'W'):
+        if current_sprints.get(cat, None):
+            sprints[cat].append(current_sprints[cat])
+        if end_sprints.get(cat, None):
+            sprints[cat].append(end_sprints[cat])
+    return sprints
+
 
 #
 # DNF = valid start, but distance < full distance.
@@ -870,6 +951,25 @@ class config_cat_group():
         if 'delay' in d:
             self.delay_ms = strT_to_sec(d['delay']) * 1000
 
+class config_points(object):
+    def __init__(self, val):
+        self.points = []
+        self.forward = True
+        self.line = None
+        self.distance = None
+        m = re.match(
+            '([0-9:]+)\s+(fwd|rev)\s+\{\s*(.+?)\s*\}\s+(km|mi)\s+([0-9\.]+)',
+            val)
+        if not m:
+            sys.exit('Unable to parse points info "%s"' % val)
+        pointStrings = m.group(1).split(':')
+        self.points = [int(p) for p in pointStrings]
+        self.forward = m.group(2) == 'fwd'
+        self.line = m.group(3)
+        self.line_id = None
+        self.distance = float(m.group(5)) * \
+                (1000 if m.group(4) == 'km' else 1609.34)
+
 
 class config():
     def __init__(self, fname):
@@ -889,6 +989,7 @@ class config():
         self.required_tag       = None
         self.start_window_ms    = min2ms(10.0)
         self.grp                = []        # category groups
+        self.points             = []        # intermediate points
 
         self.init_kw(config.__dict__)
         self.parse(fname)
@@ -951,6 +1052,14 @@ class config():
         (dir, val) = val.split(None, 1)
         self.finish_forward = True if dir == 'fwd' else False
         self.finish_line = self.parse_line(val)
+
+    @keyword('POINTS')
+    def kw_points(self, val):
+        self.points.append(config_points(val))
+
+    @keyword('POINTS_FINAL')
+    def kw_points_final(self, val):
+        self.points_final = [int(p) for p in val.split(':')]
 
     @keyword('BEGIN')
     def kw_begin(self, val):
@@ -1033,6 +1142,8 @@ class config():
         self.finish_line_id = get_line(self.finish_line)
         if self.corral_line:
             self.corral_line_id = get_line(self.corral_line)
+        for p in self.points:
+            p.line_id = get_line(p.line)
 
 
 PREFIX='''
@@ -1241,7 +1352,7 @@ def main(argv):
     # over the start line really early.
     #
     grace_ms = max(min2ms(2.0), conf.grace_ms)
-    R = get_riders(conf.start_ms - grace_ms, conf.finish_ms)
+    R, all_pos = get_riders(conf.start_ms - grace_ms, conf.finish_ms)
     if (args.debug):
         print 'Selected %d riders' % len(R)
 
@@ -1306,6 +1417,10 @@ def main(argv):
     #
     [ select_finish(r) for r in F ]
 
+    sprints = None
+    if conf.points:
+        sprints = calculate_points(all_pos, conf.points, conf.points_final)
+
     if (args.result_file):
         fname = conf.id + '.' + conf.date
         fname += '.json' if args.json else '.txt'
@@ -1328,7 +1443,7 @@ def main(argv):
         return
 
     if (args.json):
-        dump_json(conf.id, conf.start_ms, F)
+        dump_json(conf.id, conf.start_ms, F, sprints)
     else:
         results(conf.id, F)
 
