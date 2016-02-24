@@ -278,7 +278,7 @@ def get_riders(begin_ms, end_ms):
 #
 def get_line(name):
     c = dbh.cursor()
-    c.execute('select line_id from chalkline where name like ?', (name+'%',))
+    c.execute('select line_id from chalkline where name = ?', (name,))
     data = c.fetchone()
     if not data:
         sys.exit('Could not find line { %s }' % name)
@@ -425,7 +425,7 @@ def show_results(F, tag):
         s = r.pos[0]
         e = r.end
 
-        line = ("%2d. %s%c  %-*.*s  %5.1f  %3ld  %4.2f  %c  %3d  %3d %3d" % (
+        line = ("%3d. %s%c %-*.*s  %5.1f  %3ld  %4.2f  %c  %3d  %3d %3d" % (
                 r.place,
                 r.timepos,
                 r.power,
@@ -439,6 +439,9 @@ def show_results(F, tag):
             split = []
             end = r.pos.index(r.end)
             for p in r.pos[1 : end + 1]:
+                # XXX - use same line x for split.
+                if p.line_id != s.line_id:
+                    continue
                 dist = (p.meters - l.meters)
                 msec = (p.time_ms - l.time_ms)
                 pace = (float(dist) / float(msec)) * 3600
@@ -661,11 +664,33 @@ def filter_tag(r, tag):
 def filter_start(r):
     start = None
     for idx, p in enumerate(r.pos):
+
+        # Crossing is outside start window, stop searching.
         if (p.time_ms > (conf.start_ms + conf.start_window_ms)):
             break
-        if (p.line_id == conf.start_line_id) and \
-                (p.forward == conf.start_forward):
+
+        # Skip if this isn't the correct line crossing.
+        if (p.line_id != conf.start_line_id) or \
+                (p.forward != conf.start_forward):
+            continue
+
+        # First crossing seen, take it.
+        if start is None:
             start = idx
+            continue
+
+        # Subsequent crossing.
+        #   - before start window, take it.
+        if (p.time_ms < conf.start_ms):
+            start = idx
+            continue
+
+        # Subsequent crossing.
+        #   - less than 3000 meters later, take it.
+        if ((p.meters - r.pos[start].meters) < 3000):
+            start = idx
+            continue
+
     if start is None:
         return False
 
@@ -1089,7 +1114,7 @@ class config():
         t = time.struct_time((t_day.tm_year, t_day.tm_mon, t_day.tm_mday,
                 t_sec.tm_hour, t_sec.tm_min, t_sec.tm_sec,
                 0, 0, dst))
-        self.start_ms = (int(time.mktime(t)) - off) * 1000
+        self.start_ms = (int(time.mktime(t)) + off) * 1000
         self.date = time.strftime('%Y-%m-%d',
                 time.localtime(self.start_ms / 1000))
 
