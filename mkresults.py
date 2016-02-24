@@ -1009,6 +1009,7 @@ class config():
         self.corral_line        = None
         self.pace_kmh           = None
         self.cutoff_ms          = None
+        self.lookback_ms        = min2ms(2.0)
         self.grace_ms           = 0
         self.alternate          = None
         self.required_tag       = None
@@ -1040,12 +1041,26 @@ class config():
     def kw_alternate(self, val):
         self.alternate = True
 
+    #
+    # Allow this much of a jump before the official start time.
+    #
     @keyword('GRACE')
     def kw_grace(self, val):
         i = iter(val.split())
         d = dict(zip(i, i))
         if 'min' in d:
             self.grace_ms = strT_to_sec(d['min']) * 1000
+
+    #
+    # Report on riders (likely DQ) who started this early before
+    # the official start time.
+    #
+    @keyword('LOOKBACK')
+    def kw_lookback(self, val):
+        i = iter(val.split())
+        d = dict(zip(i, i))
+        if 'min' in d:
+            self.lookback_ms = strT_to_sec(d['min']) * 1000
 
     @keyword('START')
     def kw_start(self, val):
@@ -1155,6 +1170,7 @@ class config():
                     ((m.distance * 36) / (self.pace_kmh * 10)) * 1000
         else:
             self.finish_ms = self.start_ms + ((2 * 3600) * 1000)
+        self.lookback_ms = max(self.lookback_ms, self.grace_ms)
 
     def parse_line(self, val):
         m = re.match('{\s+(.*)\s+}', val)
@@ -1372,12 +1388,7 @@ def main(argv):
                 time.ctime(conf.finish_ms / 1000)))
         print('time: [%d .. %d]' % (conf.start_ms, conf.finish_ms))
 
-    #
-    # Look back at least 2 minutes just to get riders who cross
-    # over the start line really early.
-    #
-    grace_ms = max(min2ms(2.0), conf.grace_ms)
-    R, all_pos = get_riders(conf.start_ms - grace_ms, conf.finish_ms)
+    R, all_pos = get_riders(conf.start_ms - conf.lookback_ms, conf.finish_ms)
     if (args.debug):
         print 'Selected %d riders' % len(R)
 

@@ -164,10 +164,8 @@ def get_rider_list():
         time.sleep(sleepTime)
         sleepTime = retrievalTime - time.time()
     conf.load_chalklines()
-    grace_ms = max(mkresults.min2ms(2.0), conf.grace_ms)
-    if args.verbose:
-        print "Grace period (ms): %s" % grace_ms
-    R, all_pos = mkresults.get_riders(conf.start_ms - grace_ms, conf.finish_ms)
+    R, all_pos = mkresults.get_riders(conf.start_ms - conf.lookback_ms,
+            conf.finish_ms)
     return [ r.id for r in R.values() if mkresults.filter_start(r) ]
 
 def main(argv):
