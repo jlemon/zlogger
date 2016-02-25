@@ -5,6 +5,11 @@
   "table": "test",
   "fields": [
     {
+      "name": "RideID",
+      "type": "varchar(255)",
+      "value": "ride_id"
+    },
+    {
       "name": "Finishing_Position",
       "type": "integer",
       "value": "place"

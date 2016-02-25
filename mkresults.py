@@ -190,8 +190,12 @@ class rider():
         return self.end.hr
 
     @property
+    def ride_id(self):
+        return conf.id + '.' + conf.date
+
+    @property
     def ride_uuid(self):
-        return conf.id + '.' + conf.date + '.' + str(self.id)
+        return self.ride_id + '.' + str(self.id)
 
 
 def summarize_ride(r):
