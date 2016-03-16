@@ -130,5 +130,4 @@ Point scoring system.
 
 All of this should be considered Early-Access Beta software, and is subject to
 change without notice.
-
-[drop]: https://www.dropbox.com/sh/uboejm07pawjcnl/AABvHG9v1Vi24XOmtEwSqJ3Za?dl=0 "Dropbox"
+[dropbox]: https://www.dropbox.com/sh/uboejm07pawjcnl/AABvHG9v1Vi24XOmtEwSqJ3Za?dl=0 "Dropbox"
